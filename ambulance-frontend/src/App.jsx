@@ -69,29 +69,68 @@ export default function App() {
 
   }, [patientLoc]);
 
+  const cardStyle = {
+    background: "white",
+    padding: "12px",
+    borderRadius: "8px",
+    marginBottom: "12px",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.1)"
+  };
+
   return (
-    <div>
-      <div style={{ position: "absolute", zIndex: 1000, padding: 10, background: "white" }}>
-        <h3>Ambulance Dispatch Prototype</h3>
-        <p>Click map to select patient location</p>
+    <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", height: "100vh" }}>
+
+      {/* ===== LEFT SIDEBAR ===== */}
+      <div style={{ padding: "16px", borderRight: "1px solid #ddd", background: "#f8f9fa" }}>
+        <h2>🚑 Dispatch Dashboard</h2>
+
+        <div style={cardStyle}>
+          <h4>Patient</h4>
+          {patientLoc
+            ? <p>{patientLoc[0].toFixed(4)}, {patientLoc[1].toFixed(4)}</p>
+            : <p>Select location on map</p>}
+        </div>
 
         {eta && (
           <>
-            <p><b>Selected Ambulance:</b> {selectedAmbulance.id}</p>
-            <p><b>Hospital:</b> {selectedHospital.name}</p>
-            <p><b>Estimated ETA:</b> {eta} mins</p>
+            <div style={cardStyle}>
+              <h4>Ambulance</h4>
+              <p><b>ID:</b> {selectedAmbulance.id}</p>
+              <p><b>Status:</b> {selectedAmbulance.status}</p>
+            </div>
+
+            <div style={cardStyle}>
+              <h4>Hospital</h4>
+              <p>{selectedHospital.name}</p>
+            </div>
+
+            <div style={cardStyle}>
+              <h4>Estimated ETA</h4>
+              <h3>{eta} min</h3>
+            </div>
           </>
         )}
+
+        <div style={cardStyle}>
+          <h4>Legend</h4>
+          <p>📍 Patient</p>
+          <p>🚑 Ambulance</p>
+          <p>🏥 Hospital</p>
+        </div>
       </div>
 
-      <MapView
-        patientLoc={patientLoc}
-        setPatientLoc={setPatientLoc}
-        ambulances={dummyAmbulances}
-        hospitals={dummyHospitals}
-        selectedAmbulance={selectedAmbulance}
-        selectedHospital={selectedHospital}
-      />
+      {/* ===== MAP AREA ===== */}
+      <div>
+        <MapView
+          patientLoc={patientLoc}
+          setPatientLoc={setPatientLoc}
+          ambulances={dummyAmbulances}
+          hospitals={dummyHospitals}
+          selectedAmbulance={selectedAmbulance}
+          selectedHospital={selectedHospital}
+        />
+      </div>
+
     </div>
   );
 }
