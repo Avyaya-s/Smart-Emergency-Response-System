@@ -31,6 +31,8 @@ export default function App() {
   const [selectedAmbulance, setSelectedAmbulance] = useState(null);
   const [selectedHospital, setSelectedHospital] = useState(null);
   const [eta, setEta] = useState(null);
+  const [movingPos, setMovingPos] = useState(null);
+  const [phase, setPhase] = useState("IDLE"); // TO_PATIENT, TO_HOSPITAL
 
   useEffect(() => {
     if (!patientLoc) return;
@@ -65,9 +67,41 @@ export default function App() {
 
     setSelectedAmbulance(bestAmb);
     setSelectedHospital(bestHosp);
-    setEta((prepTime + travelTime).toFixed(1));
+    setEta(prepTime + travelTime);
+    setMovingPos([bestAmb.lat, bestAmb.lng]);
+    setPhase("TO_PATIENT");
 
   }, [patientLoc]);
+
+  // 🚑 movement simulation
+  useEffect(() => {
+    if (!movingPos || !selectedHospital || !patientLoc) return;
+
+    const target =
+      phase === "TO_PATIENT"
+        ? patientLoc
+        : [selectedHospital.lat, selectedHospital.lng];
+
+    const interval = setInterval(() => {
+      setMovingPos(prev => {
+        const lat = prev[0] + (target[0] - prev[0]) * 0.07;
+        const lng = prev[1] + (target[1] - prev[1]) * 0.07;
+
+        if (Math.abs(lat - target[0]) < 0.0003 && Math.abs(lng - target[1]) < 0.0003) {
+          if (phase === "TO_PATIENT") setPhase("TO_HOSPITAL");
+          else setPhase("DONE");
+          return target;
+        }
+
+        return [lat, lng];
+      });
+
+      setEta(e => (e > 0 ? e - 0.05 : 0));
+
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [movingPos, phase]);
 
   const cardStyle = {
     background: "white",
@@ -80,7 +114,7 @@ export default function App() {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", height: "100vh" }}>
 
-      {/* ===== LEFT SIDEBAR ===== */}
+      {/* SIDEBAR */}
       <div style={{ padding: "16px", borderRight: "1px solid #ddd", background: "#f8f9fa" }}>
         <h2>🚑 Dispatch Dashboard</h2>
 
@@ -95,8 +129,8 @@ export default function App() {
           <>
             <div style={cardStyle}>
               <h4>Ambulance</h4>
-              <p><b>ID:</b> {selectedAmbulance.id}</p>
-              <p><b>Status:</b> {selectedAmbulance.status}</p>
+              <p>ID: {selectedAmbulance.id}</p>
+              <p>Status: {phase === "DONE" ? "Arrived" : "En route"}</p>
             </div>
 
             <div style={cardStyle}>
@@ -105,31 +139,23 @@ export default function App() {
             </div>
 
             <div style={cardStyle}>
-              <h4>Estimated ETA</h4>
-              <h3>{eta} min</h3>
+              <h4>ETA</h4>
+              <h3>{eta.toFixed(1)} min</h3>
             </div>
           </>
         )}
-
-        <div style={cardStyle}>
-          <h4>Legend</h4>
-          <p>📍 Patient</p>
-          <p>🚑 Ambulance</p>
-          <p>🏥 Hospital</p>
-        </div>
       </div>
 
-      {/* ===== MAP AREA ===== */}
-      <div>
-        <MapView
-          patientLoc={patientLoc}
-          setPatientLoc={setPatientLoc}
-          ambulances={dummyAmbulances}
-          hospitals={dummyHospitals}
-          selectedAmbulance={selectedAmbulance}
-          selectedHospital={selectedHospital}
-        />
-      </div>
+      {/* MAP */}
+      <MapView
+        patientLoc={patientLoc}
+        setPatientLoc={setPatientLoc}
+        ambulances={dummyAmbulances}
+        hospitals={dummyHospitals}
+        selectedAmbulance={selectedAmbulance}
+        selectedHospital={selectedHospital}
+        movingPos={movingPos}
+      />
 
     </div>
   );

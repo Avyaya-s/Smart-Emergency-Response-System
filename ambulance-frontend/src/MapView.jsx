@@ -1,13 +1,12 @@
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMapEvents } from "react-leaflet";
 import L from "leaflet";
-delete L.Icon.Default.prototype._getIconUrl;
 
+delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
-
 
 const center = [12.9716, 77.5946];
 
@@ -26,7 +25,8 @@ export default function MapView({
   ambulances,
   hospitals,
   selectedAmbulance,
-  selectedHospital
+  selectedHospital,
+  movingPos
 }) {
   const route = [];
 
@@ -37,31 +37,34 @@ export default function MapView({
   }
 
   return (
-    <MapContainer center={center} zoom={13} style={{ height: "100vh" }}>
+    <MapContainer center={center} zoom={13} style={{ height: "100vh", width: "100%" }}>
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
       <LocationPicker setPatientLoc={setPatientLoc} />
 
       {patientLoc && (
         <Marker position={patientLoc}>
-          <Popup>Patient Location</Popup>
+          <Popup>Patient</Popup>
         </Marker>
       )}
 
       {ambulances.map(a => (
         <Marker key={a.id} position={[a.lat, a.lng]}>
-          <Popup>
-            <b>Ambulance {a.id}</b><br />
-            Status: {a.status}
-          </Popup>
+          <Popup>Ambulance {a.id}</Popup>
         </Marker>
       ))}
 
       {hospitals.map(h => (
         <Marker key={h.id} position={[h.lat, h.lng]}>
-          <Popup><b>{h.name}</b></Popup>
+          <Popup>{h.name}</Popup>
         </Marker>
       ))}
+
+      {movingPos && (
+        <Marker position={movingPos}>
+          <Popup>Moving Ambulance</Popup>
+        </Marker>
+      )}
 
       {route.length > 0 && (
         <Polyline positions={route} />
