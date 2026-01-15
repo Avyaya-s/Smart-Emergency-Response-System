@@ -39,6 +39,8 @@ export default function App() {
   const [phase, setPhase] = useState("IDLE");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [routeIndex, setRouteIndex] = useState(0);
+
 
   // 📡 Fetch dispatch from backend
   useEffect(() => {
@@ -59,9 +61,11 @@ export default function App() {
       .then(data => {
         setSelectedAmbulance(data.ambulance);
         setSelectedHospital(data.hospital);
-        setMovingPos([data.ambulance.lat, data.ambulance.lng]);
+        setMovingPos(data.route[0]);   // ✅ Start on route
+
         setPhase("TO_PATIENT");
         setRoute(data.route);
+        setRouteIndex(0);
         setEta(null);
         setLoading(false);
       })
@@ -74,44 +78,51 @@ export default function App() {
   }, [patientLoc]);
 
   // 🚑 Movement simulation
-  useEffect(() => {
-    if (!movingPos || !selectedHospital || !patientLoc) return;
+useEffect(() => {
+  if (!route || route.length === 0 || routeIndex >= route.length) return;
 
-    const target =
-      phase === "TO_PATIENT"
-        ? patientLoc
-        : [selectedHospital.lat, selectedHospital.lng];
+  const interval = setInterval(() => {
+    setMovingPos(prev => {
+      const speedKmph = 40;
+      const stepKm = speedKmph / 3600;
 
-    const interval = setInterval(() => {
-      setMovingPos(prev => {
-        const speedKmph = 40;
-        const stepKm = speedKmph / 3600;
+      const target = route[routeIndex];
+      const nextPos = moveTowards(prev, target, stepKm);
 
-        const nextPos = moveTowards(prev, target, stepKm);
+      const distToTarget = haversineDist(nextPos, target);
 
-        const remainingKm = haversineDist(nextPos, target);
-        const remainingMinutes = (remainingKm / speedKmph) * 60;
-        setEta(Math.max(0, remainingMinutes));
+      // If reached this route point → advance to next point
+      if (distToTarget < 0.01) {
+        setRouteIndex(i => i + 1);
+        return target;
+      }
 
-        // Arrival detection
-        if (
-          Math.abs(nextPos[0] - target[0]) < 0.0001 &&
-          Math.abs(nextPos[1] - target[1]) < 0.0001
-        ) {
-          if (phase === "TO_PATIENT") {
-            setPhase("TO_HOSPITAL");
-          } else {
-            setPhase("DONE");
-          }
-          return target;
-        }
+      return nextPos;
+    });
 
-        return nextPos;
-      });
-    }, 1000);
+    // 🔢 ETA calculation based on remaining route
+    let remainingKm = 0;
 
-    return () => clearInterval(interval);
-  }, [phase, selectedHospital, patientLoc, movingPos]);
+    if (routeIndex < route.length - 1) {
+      // distance from current pos to next route points
+      const curr = movingPos || route[0];
+
+      remainingKm += haversineDist(curr, route[routeIndex]);
+
+      for (let i = routeIndex; i < route.length - 1; i++) {
+        remainingKm += haversineDist(route[i], route[i + 1]);
+      }
+    }
+
+    const speed = 40;
+    const remainingMinutes = (remainingKm / speed) * 60;
+    setEta(Math.max(0, remainingMinutes));
+
+  }, 1000);
+
+  return () => clearInterval(interval);
+}, [route, routeIndex, movingPos]);
+
 
   const cardStyle = {
     background: "white",
