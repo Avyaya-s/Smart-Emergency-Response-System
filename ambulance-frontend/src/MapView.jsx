@@ -22,20 +22,11 @@ function LocationPicker({ setPatientLoc }) {
 export default function MapView({
   patientLoc,
   setPatientLoc,
-  ambulances,
-  hospitals,
   selectedAmbulance,
   selectedHospital,
-  movingPos
+  movingPos,
+  route               // ✅ NEW PROP
 }) {
-  const route = [];
-
-  if (selectedAmbulance && patientLoc && selectedHospital) {
-    route.push([selectedAmbulance.lat, selectedAmbulance.lng]);
-    route.push(patientLoc);
-    route.push([selectedHospital.lat, selectedHospital.lng]);
-  }
-
   return (
     <MapContainer center={center} zoom={13} style={{ height: "100vh", width: "100%" }}>
       <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
@@ -48,25 +39,20 @@ export default function MapView({
         </Marker>
       )}
 
-      {ambulances.map(a => (
-        <Marker key={a.id} position={[a.lat, a.lng]}>
-          <Popup>Ambulance {a.id}</Popup>
-        </Marker>
-      ))}
-
-      {hospitals.map(h => (
-        <Marker key={h.id} position={[h.lat, h.lng]}>
-          <Popup>{h.name}</Popup>
-        </Marker>
-      ))}
-
-      {movingPos && (
-        <Marker position={movingPos}>
-          <Popup>Moving Ambulance</Popup>
+      {selectedHospital && (
+        <Marker position={[selectedHospital.lat, selectedHospital.lng]}>
+          <Popup>{selectedHospital.name}</Popup>
         </Marker>
       )}
 
-      {route.length > 0 && (
+      {movingPos && (
+        <Marker position={movingPos}>
+          <Popup>Ambulance</Popup>
+        </Marker>
+      )}
+
+      {/* ✅ REAL ROUTE FROM BACKEND */}
+      {route && route.length > 0 && (
         <Polyline positions={route} />
       )}
     </MapContainer>

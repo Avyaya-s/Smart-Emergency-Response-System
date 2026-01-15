@@ -1,23 +1,14 @@
 import { useEffect, useState } from "react";
 import MapView from "./MapView";
 
-const dummyAmbulances = [
-  { id: "A1", lat: 12.975, lng: 77.59, status: "AVAILABLE" },
-  { id: "A2", lat: 12.965, lng: 77.60, status: "PREPARING" },
-  { id: "A3", lat: 12.985, lng: 77.58, status: "AVAILABLE" },
-];
+const API_BASE = "http://localhost:5000";
 
-const dummyHospitals = [
-  { id: "H1", name: "City Hospital", lat: 12.972, lng: 77.585 },
-  { id: "H2", name: "Metro Hospital", lat: 12.98, lng: 77.605 },
-];
-
-function haversine(a, b) {
+function haversineDist(a, b) {
   const R = 6371;
-  const dLat = (b.lat - a.lat) * Math.PI / 180;
-  const dLon = (b.lng - a.lng) * Math.PI / 180;
-  const lat1 = a.lat * Math.PI / 180;
-  const lat2 = b.lat * Math.PI / 180;
+  const dLat = (b[0] - a[0]) * Math.PI / 180;
+  const dLon = (b[1] - a[1]) * Math.PI / 180;
+  const lat1 = a[0] * Math.PI / 180;
+  const lat2 = b[0] * Math.PI / 180;
 
   const x =
     Math.sin(dLat / 2) ** 2 +
@@ -26,54 +17,63 @@ function haversine(a, b) {
   return 2 * R * Math.asin(Math.sqrt(x));
 }
 
+function moveTowards(curr, target, stepKm) {
+  const dist = haversineDist(curr, target);
+  if (dist === 0 || dist < stepKm) return target;
+
+  const ratio = stepKm / dist;
+
+  const lat = curr[0] + (target[0] - curr[0]) * ratio;
+  const lng = curr[1] + (target[1] - curr[1]) * ratio;
+
+  return [lat, lng];
+}
+
 export default function App() {
   const [patientLoc, setPatientLoc] = useState(null);
+  const [route, setRoute] = useState([]);
   const [selectedAmbulance, setSelectedAmbulance] = useState(null);
   const [selectedHospital, setSelectedHospital] = useState(null);
   const [eta, setEta] = useState(null);
   const [movingPos, setMovingPos] = useState(null);
-  const [phase, setPhase] = useState("IDLE"); // TO_PATIENT, TO_HOSPITAL
+  const [phase, setPhase] = useState("IDLE");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
+  // 📡 Fetch dispatch from backend
   useEffect(() => {
     if (!patientLoc) return;
 
-    const p = { lat: patientLoc[0], lng: patientLoc[1] };
+    setLoading(true);
+    setError(null);
 
-    let bestAmb = null;
-    let minDist = Infinity;
-
-    dummyAmbulances.forEach(a => {
-      const d = haversine(p, a);
-      if (d < minDist) {
-        minDist = d;
-        bestAmb = a;
-      }
-    });
-
-    let bestHosp = null;
-    minDist = Infinity;
-
-    dummyHospitals.forEach(h => {
-      const d = haversine(p, h);
-      if (d < minDist) {
-        minDist = d;
-        bestHosp = h;
-      }
-    });
-
-    const speed = 40; // km/h
-    const prepTime = 3; // minutes
-    const travelTime = (minDist / speed) * 60;
-
-    setSelectedAmbulance(bestAmb);
-    setSelectedHospital(bestHosp);
-    setEta(prepTime + travelTime);
-    setMovingPos([bestAmb.lat, bestAmb.lng]);
-    setPhase("TO_PATIENT");
+    fetch(`${API_BASE}/api/dispatch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        patientLat: patientLoc[0],
+        patientLng: patientLoc[1]
+      })
+    })
+      .then(res => res.json())
+      .then(data => {
+        setSelectedAmbulance(data.ambulance);
+        setSelectedHospital(data.hospital);
+        setMovingPos([data.ambulance.lat, data.ambulance.lng]);
+        setPhase("TO_PATIENT");
+        setRoute(data.route);
+        setEta(null);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setError("Backend not reachable");
+        setLoading(false);
+      });
 
   }, [patientLoc]);
 
-  // 🚑 movement simulation
+  // 🚑 Movement simulation
   useEffect(() => {
     if (!movingPos || !selectedHospital || !patientLoc) return;
 
@@ -84,24 +84,34 @@ export default function App() {
 
     const interval = setInterval(() => {
       setMovingPos(prev => {
-        const lat = prev[0] + (target[0] - prev[0]) * 0.07;
-        const lng = prev[1] + (target[1] - prev[1]) * 0.07;
+        const speedKmph = 40;
+        const stepKm = speedKmph / 3600;
 
-        if (Math.abs(lat - target[0]) < 0.0003 && Math.abs(lng - target[1]) < 0.0003) {
-          if (phase === "TO_PATIENT") setPhase("TO_HOSPITAL");
-          else setPhase("DONE");
+        const nextPos = moveTowards(prev, target, stepKm);
+
+        const remainingKm = haversineDist(nextPos, target);
+        const remainingMinutes = (remainingKm / speedKmph) * 60;
+        setEta(Math.max(0, remainingMinutes));
+
+        // Arrival detection
+        if (
+          Math.abs(nextPos[0] - target[0]) < 0.0001 &&
+          Math.abs(nextPos[1] - target[1]) < 0.0001
+        ) {
+          if (phase === "TO_PATIENT") {
+            setPhase("TO_HOSPITAL");
+          } else {
+            setPhase("DONE");
+          }
           return target;
         }
 
-        return [lat, lng];
+        return nextPos;
       });
-
-      setEta(e => (e > 0 ? e - 0.05 : 0));
-
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [movingPos, phase]);
+  }, [phase, selectedHospital, patientLoc, movingPos]);
 
   const cardStyle = {
     background: "white",
@@ -125,7 +135,10 @@ export default function App() {
             : <p>Select location on map</p>}
         </div>
 
-        {eta && (
+        {loading && <p>⏳ Computing dispatch...</p>}
+        {error && <p style={{ color: "red" }}>{error}</p>}
+
+        {eta !== null && !loading && selectedAmbulance && selectedHospital && (
           <>
             <div style={cardStyle}>
               <h4>Ambulance</h4>
@@ -150,11 +163,10 @@ export default function App() {
       <MapView
         patientLoc={patientLoc}
         setPatientLoc={setPatientLoc}
-        ambulances={dummyAmbulances}
-        hospitals={dummyHospitals}
         selectedAmbulance={selectedAmbulance}
         selectedHospital={selectedHospital}
         movingPos={movingPos}
+        route={route}
       />
 
     </div>
