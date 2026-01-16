@@ -29,18 +29,37 @@ function moveTowards(curr, target, stepKm) {
   return [lat, lng];
 }
 
+function ProgressBar({ value }) {
+  return (
+    <div style={{
+      height: "10px",
+      background: "#e0e0e0",
+      borderRadius: "6px",
+      overflow: "hidden",
+      marginTop: "6px"
+    }}>
+      <div style={{
+        height: "100%",
+        width: `${value}%`,
+        background: "#4caf50",
+        transition: "width 0.5s"
+      }} />
+    </div>
+  );
+}
+
 export default function App() {
   const [patientLoc, setPatientLoc] = useState(null);
   const [route, setRoute] = useState([]);
+  const [routeIndex, setRouteIndex] = useState(0);
   const [selectedAmbulance, setSelectedAmbulance] = useState(null);
   const [selectedHospital, setSelectedHospital] = useState(null);
   const [eta, setEta] = useState(null);
+  const [initialEta, setInitialEta] = useState(null);
   const [movingPos, setMovingPos] = useState(null);
   const [phase, setPhase] = useState("IDLE");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [routeIndex, setRouteIndex] = useState(0);
-
 
   // 📡 Fetch dispatch from backend
   useEffect(() => {
@@ -61,12 +80,12 @@ export default function App() {
       .then(data => {
         setSelectedAmbulance(data.ambulance);
         setSelectedHospital(data.hospital);
-        setMovingPos(data.route[0]);   // ✅ Start on route
-
-        setPhase("TO_PATIENT");
         setRoute(data.route);
         setRouteIndex(0);
+        setMovingPos(data.route[0]);
+        setInitialEta(null);
         setEta(null);
+        setPhase("TO_PATIENT");
         setLoading(false);
       })
       .catch(err => {
@@ -77,52 +96,54 @@ export default function App() {
 
   }, [patientLoc]);
 
-  // 🚑 Movement simulation
-useEffect(() => {
-  if (!route || route.length === 0 || routeIndex >= route.length) return;
+  // 🚑 Move ambulance along route polyline
+  useEffect(() => {
+    if (!route || route.length === 0 || routeIndex >= route.length) return;
 
-  const interval = setInterval(() => {
-    setMovingPos(prev => {
-      const speedKmph = 40;
-      const stepKm = speedKmph / 3600;
+    const interval = setInterval(() => {
+      setMovingPos(prev => {
+        const speedKmph = 40;
+        const stepKm = speedKmph / 3600;
 
-      const target = route[routeIndex];
-      const nextPos = moveTowards(prev, target, stepKm);
+        const target = route[routeIndex];
+        const nextPos = moveTowards(prev, target, stepKm);
 
-      const distToTarget = haversineDist(nextPos, target);
+        const distToTarget = haversineDist(nextPos, target);
 
-      // If reached this route point → advance to next point
-      if (distToTarget < 0.01) {
-        setRouteIndex(i => i + 1);
-        return target;
-      }
+        if (distToTarget < 0.01) {
+          setRouteIndex(i => i + 1);
+          return target;
+        }
 
-      return nextPos;
-    });
+        return nextPos;
+      });
 
-    // 🔢 ETA calculation based on remaining route
-    let remainingKm = 0;
-
-    if (routeIndex < route.length - 1) {
-      // distance from current pos to next route points
+      // 🔢 ETA calculation based on remaining route
+      let remainingKm = 0;
       const curr = movingPos || route[0];
 
-      remainingKm += haversineDist(curr, route[routeIndex]);
+      if (routeIndex < route.length - 1) {
+        remainingKm += haversineDist(curr, route[routeIndex]);
 
-      for (let i = routeIndex; i < route.length - 1; i++) {
-        remainingKm += haversineDist(route[i], route[i + 1]);
+        for (let i = routeIndex; i < route.length - 1; i++) {
+          remainingKm += haversineDist(route[i], route[i + 1]);
+        }
       }
-    }
 
-    const speed = 40;
-    const remainingMinutes = (remainingKm / speed) * 60;
-    setEta(Math.max(0, remainingMinutes));
+      const speed = 40;
+      const remainingMinutes = (remainingKm / speed) * 60;
 
-  }, 1000);
+      setEta(prev => {
+        if (initialEta === null && remainingMinutes > 0) {
+          setInitialEta(remainingMinutes);
+        }
+        return Math.max(0, remainingMinutes);
+      });
 
-  return () => clearInterval(interval);
-}, [route, routeIndex, movingPos]);
+    }, 1000);
 
+    return () => clearInterval(interval);
+  }, [route, routeIndex, movingPos, initialEta]);
 
   const cardStyle = {
     background: "white",
@@ -136,38 +157,63 @@ useEffect(() => {
     <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", height: "100vh" }}>
 
       {/* SIDEBAR */}
-      <div style={{ padding: "16px", borderRight: "1px solid #ddd", background: "#f8f9fa" }}>
-        <h2>🚑 Dispatch Dashboard</h2>
+      <div style={{
+        padding: "18px",
+        borderRight: "1px solid #ddd",
+        background: "#ffffff"
+      }}>
+        <h2 style={{ marginBottom: "12px" }}>🚑 Smart Dispatch</h2>
 
         <div style={cardStyle}>
-          <h4>Patient</h4>
-          {patientLoc
-            ? <p>{patientLoc[0].toFixed(4)}, {patientLoc[1].toFixed(4)}</p>
-            : <p>Select location on map</p>}
+          <b>Patient Location</b>
+          <div style={{ fontSize: "13px", color: "#555" }}>
+            {patientLoc
+              ? `${patientLoc[0].toFixed(4)}, ${patientLoc[1].toFixed(4)}`
+              : "Click on map"}
+          </div>
         </div>
+
+        <div style={cardStyle}>
+          <b>Status</b>
+          <div style={{ fontSize: "13px", marginTop: "6px", lineHeight: "1.6" }}>
+            <div>{phase !== "IDLE" ? "✓" : "●"} Dispatched</div>
+            <div>{phase === "TO_PATIENT" || phase === "TO_HOSPITAL" || phase === "DONE" ? "✓" : "○"} Enroute to Patient</div>
+            <div>{phase === "TO_HOSPITAL" || phase === "DONE" ? "✓" : "○"} Enroute to Hospital</div>
+            <div>{phase === "DONE" ? "✓" : "○"} Arrived</div>
+          </div>
+        </div>
+
+        {eta !== null && (
+          <div style={cardStyle}>
+            <b>ETA</b>
+            <div style={{ fontSize: "22px", marginTop: "4px" }}>
+              {eta.toFixed(1)} min
+            </div>
+
+            {initialEta && (
+              <ProgressBar
+                value={Math.min(100, ((initialEta - eta) / initialEta) * 100)}
+              />
+            )}
+          </div>
+        )}
+
+        {selectedAmbulance && (
+          <div style={cardStyle}>
+            <b>Ambulance</b>
+            <div>ID: {selectedAmbulance.id}</div>
+          </div>
+        )}
+
+        {selectedHospital && (
+          <div style={cardStyle}>
+            <b>Hospital</b>
+            <div>{selectedHospital.name}</div>
+          </div>
+        )}
 
         {loading && <p>⏳ Computing dispatch...</p>}
         {error && <p style={{ color: "red" }}>{error}</p>}
-
-        {eta !== null && !loading && selectedAmbulance && selectedHospital && (
-          <>
-            <div style={cardStyle}>
-              <h4>Ambulance</h4>
-              <p>ID: {selectedAmbulance.id}</p>
-              <p>Status: {phase === "DONE" ? "Arrived" : "En route"}</p>
-            </div>
-
-            <div style={cardStyle}>
-              <h4>Hospital</h4>
-              <p>{selectedHospital.name}</p>
-            </div>
-
-            <div style={cardStyle}>
-              <h4>ETA</h4>
-              <h3>{eta.toFixed(1)} min</h3>
-            </div>
-          </>
-        )}
       </div>
 
       {/* MAP */}
