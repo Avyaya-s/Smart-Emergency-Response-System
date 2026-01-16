@@ -8,6 +8,30 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+const ambulanceIcon = L.divIcon({
+  html: "<div style='font-size:37px'>🚑</div>",
+  className: "",
+  iconSize: [34, 34],
+  iconAnchor: [17, 17],
+});
+
+const hospitalIcon = L.divIcon({
+  html: "<div style='font-size:37px'>🏥</div>",
+  className: "",
+  iconSize: [34, 34],
+  iconAnchor: [17, 17],
+});
+
+const patientIcon = L.divIcon({
+  html: "<div style='font-size:30px'>📍</div>",
+  className: "",
+  iconSize: [30, 30],
+  iconAnchor: [15, 30],
+});
+
+
+
+
 const center = [12.9716, 77.5946];
 
 function LocationPicker({ setPatientLoc }) {
@@ -34,19 +58,21 @@ export default function MapView({
       <LocationPicker setPatientLoc={setPatientLoc} />
 
       {patientLoc && (
-        <Marker position={patientLoc}>
+        <Marker position={patientLoc} icon={patientIcon}>
+
           <Popup>Patient</Popup>
         </Marker>
       )}
 
       {selectedHospital && (
-        <Marker position={[selectedHospital.lat, selectedHospital.lng]}>
+        <Marker position={[selectedHospital.lat, selectedHospital.lng]} icon={hospitalIcon}>
           <Popup>{selectedHospital.name}</Popup>
         </Marker>
       )}
 
       {movingPos && (
-        <Marker position={movingPos}>
+        <Marker position={movingPos} icon={ambulanceIcon}>
+
           <Popup>Ambulance</Popup>
         </Marker>
       )}
