@@ -3,6 +3,93 @@ import MapView from "./MapView";
 
 const API_BASE = "http://localhost:5000";
 
+// 🚓 Dummy Police Jurisdictions (polygons)
+// 🚓 Dummy Police Jurisdictions (fictional shapes)
+// 🚓 Dummy Police Jurisdictions (fictional but realistic)
+const policeZones = [
+  {
+    id: "PS1",
+    name: "Central Zone",
+    color: "red",
+    polygon: [
+      [12.9695, 77.5862],
+      [12.9768, 77.5885],
+      [12.9789, 77.5959],
+      [12.9744, 77.6018],
+      [12.9682, 77.5996],
+      [12.9669, 77.5918]
+    ]
+  },
+  {
+    id: "PS2",
+    name: "East Zone",
+    color: "green",
+    polygon: [
+      [12.9792, 77.6023],
+      [12.9867, 77.6064],
+      [12.9911, 77.6138],
+      [12.9850, 77.6209],
+      [12.9783, 77.6154],
+      [12.9765, 77.6081]
+    ]
+  },
+  {
+    id: "PS3",
+    name: "South Zone",
+    color: "orange",
+    polygon: [
+      [12.9628, 77.5871],
+      [12.9692, 77.5938],
+      [12.9681, 77.6024],
+      [12.9607, 77.6031],
+      [12.9568, 77.5950],
+      [12.9589, 77.5883]
+    ]
+  },
+  {
+    id: "PS4",
+    name: "West Zone",
+    color: "blue",
+    polygon: [
+      [12.9711, 77.5752],
+      [12.9784, 77.5786],
+      [12.9769, 77.5859],
+      [12.9702, 77.5884],
+      [12.9654, 77.5832],
+      [12.9671, 77.5771]
+    ]
+  },
+  {
+    id: "PS5",
+    name: "North Zone",
+    color: "purple",
+    polygon: [
+      [12.9851, 77.5867],
+      [12.9923, 77.5891],
+      [12.9958, 77.5968],
+      [12.9897, 77.6027],
+      [12.9831, 77.5982],
+      [12.9822, 77.5903]
+    ]
+  },
+  {
+    id: "PS6",
+    name: "North-East Zone",
+    color: "teal",
+    polygon: [
+      [12.9902, 77.6049],
+      [12.9975, 77.6096],
+      [13.0001, 77.6172],
+      [12.9943, 77.6224],
+      [12.9876, 77.6181],
+      [12.9864, 77.6102]
+    ]
+  }
+];
+
+
+
+
 /*
   NOTE:
   haversineDist + moveTowards are used ONLY for
@@ -55,6 +142,35 @@ function ProgressBar({ value }) {
   );
 }
 
+// 📐 Point in Polygon check (Ray Casting Algorithm)
+function isPointInPolygon(point, polygon) {
+  const [x, y] = point;
+  let inside = false;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0], yi = polygon[i][1];
+    const xj = polygon[j][0], yj = polygon[j][1];
+
+    const intersect =
+      ((yi > y) !== (yj > y)) &&
+      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+
+    if (intersect) inside = !inside;
+  }
+
+  return inside;
+}
+
+function zoneCentroid(polygon) {
+  let lat = 0, lng = 0;
+  polygon.forEach(p => {
+    lat += p[0];
+    lng += p[1];
+  });
+  return [lat / polygon.length, lng / polygon.length];
+}
+
+
 export default function App() {
   const [patientLoc, setPatientLoc] = useState(null);
   const [route, setRoute] = useState([]);
@@ -69,6 +185,10 @@ export default function App() {
   const [error, setError] = useState(null);
   const [prepRemaining, setPrepRemaining] = useState(0);
   const [speedKmph, setSpeedKmph] = useState(40);
+  const [activePoliceZone, setActivePoliceZone] = useState(null);
+  const [policeAlert, setPoliceAlert] = useState(null);
+  const [zoneTimeline, setZoneTimeline] = useState([]);
+  const [predictedZone, setPredictedZone] = useState(null);
 
 
   // 📡 Fetch dispatch from backend
@@ -211,6 +331,74 @@ export default function App() {
     return () => clearInterval(interval);
   }, [route, routeIndex, phase]);
 
+  // 🚓 Police jurisdiction detection
+  useEffect(() => {
+    if (!movingPos) return;
+
+    let detectedZone = null;
+
+    for (const zone of policeZones) {
+      if (isPointInPolygon(movingPos, zone.polygon)) {
+        detectedZone = zone;
+        break;
+      }
+    }
+
+  // Entered new zone
+  if (
+    detectedZone &&
+    (!activePoliceZone || detectedZone.id !== activePoliceZone.id)
+  ) {
+    console.log("🚨 Entered police jurisdiction:", detectedZone.name);
+
+   setActivePoliceZone(detectedZone);
+   setPoliceAlert(`🚓 Entered ${detectedZone.name}. Police notified for clearance.`);
+
+setZoneTimeline(prev => [
+  ...prev,
+  {
+    zone: detectedZone.name,
+    time: new Date().toLocaleTimeString()
+  }
+]);
+
+  }
+
+  // Exited all zones
+  if (!detectedZone && activePoliceZone) {
+    console.log("➡️ Exited police jurisdiction:", activePoliceZone.name);
+    setActivePoliceZone(null);
+  }
+
+}, [movingPos]);
+
+// 🔮 Predict next police zone
+useEffect(() => {
+  if (!movingPos) return;
+
+  let closest = null;
+  let bestDist = Infinity;
+
+  policeZones.forEach(zone => {
+    if (activePoliceZone && zone.id === activePoliceZone.id) return;
+
+    const centroid = zoneCentroid(zone.polygon);
+    const d = haversineDist(movingPos, centroid);
+
+    if (d < bestDist) {
+      bestDist = d;
+      closest = zone;
+    }
+  });
+
+  if (closest) {
+    setPredictedZone(closest);
+  }
+
+}, [movingPos, activePoliceZone]);
+
+
+
   // 🔄 Traffic-aware ETA refresh
   useEffect(() => {
     if (
@@ -258,8 +446,11 @@ export default function App() {
       <div style={{
         padding: "18px",
         borderRight: "1px solid #ddd",
-        background: "#ffffff"
+        background: "#ffffff",
+        height: "100vh",
+        overflowY: "auto"
       }}>
+
         <h2 style={{ marginBottom: "12px" }}>🚑 Smart Dispatch</h2>
 
         <div style={cardStyle}>
@@ -281,6 +472,47 @@ export default function App() {
             <div>{phase === "DONE" ? "✓" : "○"} Arrived</div>
           </div>
         </div>
+
+
+
+
+            {policeAlert && (
+              <div style={{
+              ...cardStyle,
+              background: "#e3f2fd",
+              border: "1px solid #2196f3"
+            }}>
+              <b>Police Coordination</b>
+              <div style={{ fontSize: "14px", marginTop: "6px" }}>
+                {policeAlert}
+              </div>
+            </div>
+          )}
+        {/* 🔮 Predicted Next Zone */}
+        {predictedZone && (
+          <div style={cardStyle}>
+            <b>Next Likely Jurisdiction</b>
+            <div style={{ fontSize: "14px", marginTop: "4px" }}>
+              {predictedZone.name}
+            </div>
+          </div>
+        )}
+
+          {/* 🕒 Zone Transition Timeline */}
+          {zoneTimeline.length > 0 && (
+            <div style={cardStyle}>
+              <b>Zone Timeline</b>
+              <div style={{ fontSize: "12px", marginTop: "6px" }}>
+                {zoneTimeline.slice(-5).map((entry, idx) => (
+                  <div key={idx}>
+                    {entry.time} — {entry.zone}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+      
+
 
         {phase === "PREPARING" && (
           <div style={cardStyle}>
@@ -331,6 +563,34 @@ export default function App() {
 
         {loading && <p>⏳ Computing dispatch...</p>}
         {error && <p style={{ color: "red" }}>{error}</p>}
+        {/* 🗺️ Zone Legend */}
+        <div style={cardStyle}>
+          <b>Police Zones</b>
+          <div style={{ marginTop: "8px" }}>
+            {policeZones.map(zone => (
+              <div
+                key={zone.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  marginBottom: "6px",
+                  fontSize: "13px"
+                }}
+              >
+                <div
+                  style={{
+                    width: "14px",
+                    height: "14px",
+                    background: zone.color,
+                    marginRight: "8px",
+                    borderRadius: "3px"
+                  }}
+                />
+                {zone.name}
+              </div>
+            ))}
+          </div>
+        </div> 
       </div>
 
       {/* MAP */}
@@ -341,7 +601,9 @@ export default function App() {
         selectedHospital={selectedHospital}
         movingPos={movingPos}
         route={route}
+        policeZones={policeZones}
       />
+
 
     </div>
   );

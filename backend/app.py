@@ -78,28 +78,28 @@ def dispatch():
         # -----------------------
         # Select Best Ambulance (ROAD ETA)
         # -----------------------
-        best_amb, amb_eta = select_best_ambulance(patient, ambulances)
+        best_amb, amb_eta, cache = select_best_ambulance(patient, ambulances)
 
         # -----------------------
-        # Select Nearest Hospital
+        # Select Nearest Hospital (ROAD ETA)
         # -----------------------
-        best_hosp = select_nearest_hospital(patient, hospitals)
+        best_hosp, hosp_eta, cache = select_nearest_hospital(
+            patient, hospitals, cache
+        )
 
         # -----------------------
-        # Build Routes
+        # Build Routes from Cache (NO EXTRA API CALLS)
         # -----------------------
-        # Ambulance -> Patient
-        route1, dist1, dur1 = get_route(best_amb, patient)
+        amb_key = f"{best_amb['lat']},{best_amb['lng']}->{patient['lat']},{patient['lng']}"
+        hosp_key = f"{patient['lat']},{patient['lng']}->{best_hosp['lat']},{best_hosp['lng']}"
 
-        # Patient -> Hospital
-        route2, dist2, dur2 = get_route(patient, best_hosp)
+        route1, dist1, dur1 = cache[amb_key]
+        route2, dist2, dur2 = cache[hosp_key]
 
-        # Merge routes
         full_route = route1 + route2
-
         total_distance = dist1 + dist2
 
-        # ETA already includes ambulance prep time
+        # amb_eta already includes prepTime
         total_eta = amb_eta + dur2
 
         # -----------------------
@@ -116,7 +116,8 @@ def dispatch():
     except Exception as e:
         print("Dispatch error:", str(e))
         return jsonify({"error": "Dispatch failed", "details": str(e)}), 500
-    
+
+ 
 @app.route("/api/refresh-eta", methods=["POST"])
 def refresh_eta():
     data = request.json

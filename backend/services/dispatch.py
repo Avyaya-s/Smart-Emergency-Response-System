@@ -3,13 +3,20 @@ from services.routing import get_route
 def select_best_ambulance(patient, ambulances):
     best = None
     best_eta = float("inf")
+    route_cache = {}
 
     for amb in ambulances:
         if amb.get("status") != "AVAILABLE":
             continue
 
+        key = f"{amb['lat']},{amb['lng']}->{patient['lat']},{patient['lng']}"
+
         try:
-            _, _, route_duration = get_route(amb, patient)
+            if key not in route_cache:
+                route_cache[key] = get_route(amb, patient)
+
+            _, _, route_duration = route_cache[key]
+
         except Exception as e:
             print("Routing failed for ambulance", amb.get("id"), e)
             continue
@@ -23,16 +30,22 @@ def select_best_ambulance(patient, ambulances):
     if best is None:
         raise Exception("No available ambulances")
 
-    return best, round(best_eta, 2)
+    return best, round(best_eta, 2), route_cache
 
 
-def select_nearest_hospital(patient, hospitals):
+def select_nearest_hospital(patient, hospitals, route_cache):
     best = None
     best_time = float("inf")
 
     for hosp in hospitals:
+        key = f"{patient['lat']},{patient['lng']}->{hosp['lat']},{hosp['lng']}"
+
         try:
-            _, _, duration = get_route(patient, hosp)
+            if key not in route_cache:
+                route_cache[key] = get_route(patient, hosp)
+
+            _, _, duration = route_cache[key]
+
         except Exception as e:
             print("Routing failed for hospital", hosp.get("id"), e)
             continue
@@ -44,4 +57,4 @@ def select_nearest_hospital(patient, hospitals):
     if best is None:
         raise Exception("No reachable hospitals")
 
-    return best
+    return best, round(best_time, 2), route_cache
