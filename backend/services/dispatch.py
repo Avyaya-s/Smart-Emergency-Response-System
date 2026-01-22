@@ -1,42 +1,47 @@
-import math
-
-SPEED_KMPH = 40
-
-def haversine(a, b):
-    R = 6371
-    dlat = math.radians(b["lat"] - a["lat"])
-    dlon = math.radians(b["lng"] - a["lng"])
-    lat1 = math.radians(a["lat"])
-    lat2 = math.radians(b["lat"])
-
-    x = math.sin(dlat/2)**2 + math.sin(dlon/2)**2 * math.cos(lat1) * math.cos(lat2)
-    return 2 * R * math.asin(math.sqrt(x))
-
+from services.routing import get_route
 
 def select_best_ambulance(patient, ambulances):
     best = None
     best_eta = float("inf")
 
     for amb in ambulances:
-        dist = haversine(patient, amb)
-        travel_time = (dist / SPEED_KMPH) * 60
-        eta = amb["prepTime"] + travel_time
+        if amb.get("status") != "AVAILABLE":
+            continue
+
+        try:
+            _, _, route_duration = get_route(amb, patient)
+        except Exception as e:
+            print("Routing failed for ambulance", amb.get("id"), e)
+            continue
+
+        eta = amb.get("prepTime", 0) + route_duration
 
         if eta < best_eta:
             best_eta = eta
             best = amb
+
+    if best is None:
+        raise Exception("No available ambulances")
 
     return best, round(best_eta, 2)
 
 
 def select_nearest_hospital(patient, hospitals):
     best = None
-    best_dist = float("inf")
+    best_time = float("inf")
 
-    for h in hospitals:
-        dist = haversine(patient, h)
-        if dist < best_dist:
-            best_dist = dist
-            best = h
+    for hosp in hospitals:
+        try:
+            _, _, duration = get_route(patient, hosp)
+        except Exception as e:
+            print("Routing failed for hospital", hosp.get("id"), e)
+            continue
+
+        if duration < best_time:
+            best_time = duration
+            best = hosp
+
+    if best is None:
+        raise Exception("No reachable hospitals")
 
     return best
