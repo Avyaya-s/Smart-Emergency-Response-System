@@ -181,6 +181,112 @@ function createClearanceRequest(zoneName) {
   };
 }
 
+function PolicePopup({ request, onApprove, onReject, slaRemaining }) {
+  if (!request) return null;
+
+  return (
+    <div style={{
+      position: "fixed",
+      top: "20px",
+      right: "20px",
+      width: "280px",
+      padding: "14px",
+      background: "white",
+      borderRadius: "10px",
+      boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+      zIndex: 9999
+    }}>
+
+      <b>🚓 Police Clearance</b>
+
+      <div style={{ fontSize: "13px", marginTop: "6px" }}>
+        <div><b>Zone:</b> {request.zone}</div>
+        <div><b>Status:</b> {request.status}</div>
+      </div>
+
+      {/* ⏱ SLA Countdown */}
+      {slaRemaining !== null && request.status === "PENDING" && (
+        <div style={{
+          marginTop: "8px",
+          fontSize: "13px",
+          color: slaRemaining < 2 ? "#d32f2f" : "#333"
+        }}>
+          ⏱ SLA expires in: <b>{slaRemaining.toFixed(1)} sec</b>
+        </div>
+      )}
+
+      {/* 🎛 Controls */}
+      {request.status === "PENDING" && (
+        <div style={{ display: "flex", gap: "10px", marginTop: "12px" }}>
+          <button
+            onClick={onApprove}
+            style={{
+              flex: 1,
+              background: "#4caf50",
+              color: "white",
+              border: "none",
+              padding: "6px",
+              borderRadius: "5px",
+              cursor: "pointer"
+            }}
+          >
+            ✅ Approve
+          </button>
+
+          <button
+            onClick={onReject}
+            style={{
+              flex: 1,
+              background: "#f44336",
+              color: "white",
+              border: "none",
+              padding: "6px",
+              borderRadius: "5px",
+              cursor: "pointer"
+            }}
+          >
+            ❌ Reject
+          </button>
+        </div>
+      )}
+
+      {request.status === "ACKED" && (
+        <div style={{ marginTop: "10px", color: "#2e7d32" }}>
+          ✅ Clearance granted
+        </div>
+      )}
+
+      {request.status === "TIMEOUT" && (
+        <div style={{ marginTop: "10px", color: "#d32f2f" }}>
+          ⚠ Clearance timed out
+        </div>
+      )}
+    </div>
+  );
+}
+
+function playAlertSound() {
+  try {
+    const audio = new Audio("/alert.mp3");   // put alert.mp3 inside /public folder
+    audio.play();
+  } catch (err) {
+    console.warn("Audio playback failed:", err);
+  }
+}
+
+function playSuccessSound() {
+  const audio = new Audio("/success.mp3");
+  audio.volume = 0.7;
+  audio.play().catch(err => {
+    console.warn("Success sound failed:", err);
+  });
+}
+
+function playErrorSound() {
+  const audio = new Audio("/error.mp3");
+  audio.volume = 0.7;
+  audio.play().catch(() => {});
+}
 
 
 export default function App() {
@@ -201,7 +307,8 @@ export default function App() {
   const [policeAlert, setPoliceAlert] = useState(null);
   const [zoneTimeline, setZoneTimeline] = useState([]);
   const [predictedZone, setPredictedZone] = useState(null);
-  
+  const [slaRemaining, setSlaRemaining] = useState(null);
+
   // 🚓 Police Clearance Platform
   const POLICE_SLA_SEC = 8;
 
@@ -221,7 +328,7 @@ export default function App() {
         (now - prev.activeRequest.requestedAt) / 1000;
 
       console.log("✅ Manual APPROVE clicked");
-
+      playSuccessSound();
       return {
         activeRequest: {
           ...prev.activeRequest,
@@ -247,7 +354,7 @@ export default function App() {
         (now - prev.activeRequest.requestedAt) / 1000;
 
       console.log("❌ Manual REJECT clicked");
-
+      playErrorSound();
       return {
         activeRequest: {
           ...prev.activeRequest,
@@ -476,6 +583,7 @@ export default function App() {
     activeRequest: request,
     history: [...prev.history, request]
   }));
+  playAlertSound();
 
 
    setPoliceAlert(`🚓 Entered ${detectedZone.name}. Police notified for clearance.`);
@@ -556,6 +664,21 @@ useEffect(() => {
     return () => clearInterval(refreshTimer);
   }, [phase, movingPos, selectedHospital, patientLoc]);
 
+  useEffect(() => {
+  const req = policePlatform.activeRequest;
+  if (!req || req.status !== "PENDING") {
+    setSlaRemaining(null);
+    return;
+  }
+
+  const timer = setInterval(() => {
+    const elapsed = (Date.now() - req.requestedAt) / 1000;
+    const remaining = Math.max(0, POLICE_SLA_SEC - elapsed);
+    setSlaRemaining(remaining);
+  }, 300);
+
+  return () => clearInterval(timer);
+}, [policePlatform.activeRequest]);
 
 
 
@@ -641,35 +764,7 @@ useEffect(() => {
           )}
       
                   {/* 🚓 Police Clearance Platform */}
-        {policePlatform.activeRequest && (
-          <div style={cardStyle}>
-            <b>Police Clearance</b>
-
-            <div style={{ fontSize: "13px", marginTop: "6px" }}>
-              <div><b>Zone:</b> {policePlatform.activeRequest.zone}</div>
-              <div><b>Status:</b> {policePlatform.activeRequest.status}</div>
-
-              {policePlatform.activeRequest.responseSec && (
-                <div>
-                  <b>Response:</b>{" "}
-                  {policePlatform.activeRequest.responseSec.toFixed(1)} sec
-                </div>
-              )}
-
-              {policePlatform.activeRequest.status === "PENDING" && (
-                <div>⏳ Awaiting police clearance...</div>
-              )}
-
-              {policePlatform.activeRequest.status === "ACKED" && (
-                <div>✅ Clearance granted</div>
-              )}
-
-              {policePlatform.activeRequest.status === "TIMEOUT" && (
-                <div>⚠ SLA breached</div>
-              )}
-            </div>
-          </div>
-        )}
+        
 
         {/* 📜 Police Clearance History */}
         {policePlatform.history.length > 0 && (
@@ -820,6 +915,13 @@ useEffect(() => {
         route={route}
         policeZones={policeZones}
       />
+      <PolicePopup
+        request={policePlatform.activeRequest}
+        onApprove={approveClearance}
+        onReject={rejectClearance}
+        slaRemaining={slaRemaining}
+      />
+
 
 
     </div>
