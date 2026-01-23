@@ -182,6 +182,7 @@ function createClearanceRequest(zoneName) {
 }
 
 
+
 export default function App() {
   const [patientLoc, setPatientLoc] = useState(null);
   const [route, setRoute] = useState([]);
@@ -209,38 +210,99 @@ export default function App() {
     history: []            // all past requests
   });
 
+  // ✅ ADD FUNCTIONS HERE 👇
+
+  function approveClearance() {
+    setPolicePlatform(prev => {
+      if (!prev.activeRequest) return prev;
+
+      const now = Date.now();
+      const responseSec =
+        (now - prev.activeRequest.requestedAt) / 1000;
+
+      console.log("✅ Manual APPROVE clicked");
+
+      return {
+        activeRequest: {
+          ...prev.activeRequest,
+          status: "ACKED",
+          ackAt: now,
+          responseSec
+        },
+        history: prev.history.map(r =>
+          r.id === prev.activeRequest.id
+            ? { ...r, status: "ACKED", ackAt: now, responseSec }
+            : r
+        )
+      };
+    });
+  }
+
+  function rejectClearance() {
+    setPolicePlatform(prev => {
+      if (!prev.activeRequest) return prev;
+
+      const now = Date.now();
+      const responseSec =
+        (now - prev.activeRequest.requestedAt) / 1000;
+
+      console.log("❌ Manual REJECT clicked");
+
+      return {
+        activeRequest: {
+          ...prev.activeRequest,
+          status: "TIMEOUT",
+          ackAt: now,
+          responseSec
+        },
+        history: prev.history.map(r =>
+          r.id === prev.activeRequest.id
+            ? { ...r, status: "TIMEOUT", ackAt: now, responseSec }
+            : r
+        )
+      };
+    });
+  }
+
+
 
   // 🚓 Police ACK Simulation Engine
-useEffect(() => {
-  const req = policePlatform.activeRequest;
-  if (!req || req.status !== "PENDING") return;
 
-  const delayMs = 2000 + Math.random() * 8000;
 
-  const timer = setTimeout(() => {
-    const now = Date.now();
-    const responseSec = (now - req.requestedAt) / 1000;
+  // ⏱️ SLA Auto Timeout Guard
+  useEffect(() => {
+    const req = policePlatform.activeRequest;
+    if (!req || req.status !== "PENDING") return;
 
-    const finalStatus =
-      responseSec > POLICE_SLA_SEC ? "TIMEOUT" : "ACKED";
+    const timer = setTimeout(() => {
+      console.warn("⚠ Police SLA breached automatically");
 
-    setPolicePlatform(prev => ({
-      activeRequest: {
-        ...req,
-        status: finalStatus,
-        ackAt: now,
-        responseSec
-      },
-      history: prev.history.map(r =>
-        r.id === req.id
-          ? { ...r, status: finalStatus, ackAt: now, responseSec }
-          : r
-      )
-    }));
-  }, delayMs);
+      setPolicePlatform(prev => {
+        if (!prev.activeRequest) return prev;
 
-  return () => clearTimeout(timer);
-}, [policePlatform.activeRequest]);
+        const now = Date.now();
+        const responseSec =
+          (now - prev.activeRequest.requestedAt) / 1000;
+
+        return {
+          activeRequest: {
+            ...prev.activeRequest,
+            status: "TIMEOUT",
+            ackAt: now,
+            responseSec
+          },
+          history: prev.history.map(r =>
+            r.id === prev.activeRequest.id
+              ? { ...r, status: "TIMEOUT", ackAt: now, responseSec }
+              : r
+          )
+        };
+      });
+
+    }, POLICE_SLA_SEC * 1000);
+
+    return () => clearTimeout(timer);
+  }, [policePlatform.activeRequest]);
 
 
 
@@ -622,6 +684,50 @@ useEffect(() => {
             </div>
           </div>
         )}
+
+        {/* 🚓 Police Control Panel */}
+          {policePlatform.activeRequest?.status === "PENDING" && (
+            <div style={{ ...cardStyle, border: "2px dashed #1976d2" }}>
+              <b>Police Control Panel</b>
+
+              <div style={{ marginTop: "8px", fontSize: "13px" }}>
+                Pending clearance for <b>{policePlatform.activeRequest.zone}</b>
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+                <button
+                  onClick={approveClearance}
+                  style={{
+                    flex: 1,
+                    padding: "6px",
+                    background: "#4caf50",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer"
+                  }}
+                >
+                  ✅ Approve
+                </button>
+
+                <button
+                  onClick={rejectClearance}
+                  style={{
+                    flex: 1,
+                    padding: "6px",
+                    background: "#f44336",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "4px",
+                    cursor: "pointer"
+                  }}
+                >
+                  ❌ Reject
+                </button>
+              </div>
+            </div>
+          )}
+
 
 
         {phase === "PREPARING" && (
