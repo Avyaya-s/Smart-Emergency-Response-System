@@ -1,6 +1,6 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-
+import os
 from services.firebase import db
 from services.dispatch import select_best_ambulance, select_nearest_hospital
 from services.routing import get_route
@@ -146,5 +146,9 @@ def refresh_eta():
 # -------------------------------
 # Run Server
 # -------------------------------
+
+
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+

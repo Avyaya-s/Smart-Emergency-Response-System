@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import MapView from "./MapView";
 
-const API_BASE = "http://localhost:5000";
+const API_BASE = "http://127.0.0.1:5000";
 
 // 🚓 Dummy Police Jurisdictions (polygons)
 // 🚓 Dummy Police Jurisdictions (fictional shapes)
@@ -413,6 +413,8 @@ function FooterPanel({
 }
 
 
+
+
 export default function App() {
   const [patientLoc, setPatientLoc] = useState(null);
   const [route, setRoute] = useState([]);
@@ -516,7 +518,46 @@ export default function App() {
     });
   }
 
+  function handlePatientReached() {
+  console.log("🚑 Patient reached → Switching to hospital leg");
 
+  playSuccessSound();
+
+  // Move to hospital phase
+  setPhase("TO_HOSPITAL");
+
+  // Reset route index so animation continues cleanly
+  setRouteIndex(0);
+
+  // Clear police-related state for next leg
+  setActivePoliceZone(null);
+  setPoliceAlert(null);
+  setZoneTimeline([]);
+  setPolicePlatform(prev => ({
+    activeRequest: null,
+    history: prev.history   // keep history
+  }));
+
+  // Optional visual confirmation
+  alert("✅ Patient picked up. Proceeding to hospital.");
+}
+
+function handleHospitalReached() {
+  console.log("🏁 Hospital reached → Mission completed");
+
+  playSuccessSound();
+
+  setPhase("DONE");
+  setEta(0);
+
+  // Clear everything
+  setActivePoliceZone(null);
+  setPoliceAlert(null);
+  setZoneTimeline([]);
+  setPolicePlatform({ activeRequest: null, history: [] });
+
+  alert("🏥 Patient delivered successfully. Mission completed.");
+}
 
   // 🚓 Police ACK Simulation Engine
 
@@ -668,25 +709,37 @@ export default function App() {
           return target;
         }
         // 🎯 Arrival detection
-        if (phase === "TO_PATIENT") {
-          const distToPatient = haversineDist(nextPos, patientLoc);
-          if (distToPatient < 0.02) {
-            console.log("✅ Patient reached");
-            setPhase("TO_HOSPITAL");
-          }
-        }
+        // 🎯 Arrival detection
+// 🎯 Arrival detection (stable)
+          if (phase === "TO_PATIENT") {
+            const distToPatient = haversineDist(nextPos, patientLoc);
 
-        if (phase === "TO_HOSPITAL") {
-          const hospPos = [
-            selectedHospital.lat,
-            selectedHospital.lng
-          ];
-          const distToHospital = haversineDist(nextPos, hospPos);
-          if (distToHospital < 0.02) {
-            console.log("🏁 Hospital reached");
-            setPhase("DONE");
+            if (distToPatient <= 0.05) {
+              console.log("✅ Patient reached");
+
+              setPhase("TO_HOSPITAL");
+              setRouteIndex(0);          // reset index for clean continuation
+              return nextPos;           // stop further processing this tick
+            }
           }
-        }
+
+          if (phase === "TO_HOSPITAL") {
+            const hospPos = [
+              selectedHospital.lat,
+              selectedHospital.lng
+            ];
+
+            const distToHospital = haversineDist(nextPos, hospPos);
+
+            if (distToHospital <= 0.05) {
+              console.log("🏁 Hospital reached");
+
+              setPhase("DONE");
+              return nextPos;
+            }
+          }
+
+
 
         return nextPos;
       });
