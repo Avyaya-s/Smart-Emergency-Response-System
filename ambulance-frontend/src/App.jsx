@@ -123,20 +123,29 @@ function moveTowards(curr, target, stepKm) {
   return [lat, lng];
 }
 
-function ProgressBar({ value }) {
+function MultiSegmentProgressBar({ prepValue, travelValue }) {
   return (
     <div style={{
-      height: "10px",
-      background: "#e0e0e0",
+      height: "12px",
+      background: "#e2e8f0",
       borderRadius: "6px",
       overflow: "hidden",
-      marginTop: "6px"
+      marginTop: "8px",
+      display: "flex"
     }}>
+      {/* Preparation Segment (Orange) */}
       <div style={{
         height: "100%",
-        width: `${value}%`,
-        background: "#4caf50",
-        transition: "width 0.5s"
+        width: `${prepValue}%`,
+        background: "#f59e0b",
+        transition: "width 0.5s ease"
+      }} />
+      {/* Travel Segment (Green) */}
+      <div style={{
+        height: "100%",
+        width: `${travelValue}%`,
+        background: "#10b981",
+        transition: "width 0.5s ease"
       }} />
     </div>
   );
@@ -288,6 +297,121 @@ function playErrorSound() {
   audio.play().catch(() => {});
 }
 
+function HeaderBar({
+  phase,
+  eta,
+  speedKmph,
+  activePoliceZone,
+  loading
+}) {
+  return (
+    <div style={{
+      height: "56px",
+      background: "#0d47a1",
+      color: "white",
+      display: "flex",
+      alignItems: "center",
+      padding: "0 18px",
+      justifyContent: "space-between",
+      fontSize: "14px",
+      fontWeight: 500
+    }}>
+      
+      {/* Left */}
+      <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+        <div style={{ fontWeight: 600 }}>
+          🚑 Smart Emergency Dispatch
+        </div>
+
+        <div>
+          Status: <b>{phase}</b>
+        </div>
+
+        {eta !== null && (
+          <div>
+            ETA: <b>{eta.toFixed(1)} min</b>
+          </div>
+        )}
+
+        {(phase === "TO_PATIENT" || phase === "TO_HOSPITAL") && (
+          <div>
+            Speed: <b>{speedKmph.toFixed(0)} km/h</b>
+          </div>
+        )}
+
+        {activePoliceZone && (
+          <div>
+            Zone: <b>{activePoliceZone.name}</b>
+          </div>
+        )}
+      </div>
+
+      {/* Right */}
+      <div>
+        {loading ? "🟡 Computing..." : "🟢 System Online"}
+      </div>
+    </div>
+  );
+}
+
+function FooterPanel({
+  zoneTimeline,
+  policeHistory,
+  speedKmph
+}) {
+  return (
+    <div style={{
+      height: "140px",
+      background: "#f5f7fa",
+      borderTop: "1px solid #ddd",
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: "12px",
+      padding: "10px 14px",
+      fontSize: "12px"
+    }}>
+
+      {/* Zone Timeline */}
+      <div>
+        <b>🗺 Zone Timeline</b>
+        <div style={{ marginTop: "6px" }}>
+          {zoneTimeline.slice(-5).reverse().map((z, i) => (
+            <div key={i}>
+              {z.time} — {z.zone}
+            </div>
+          ))}
+          {zoneTimeline.length === 0 && <div>No zone transitions yet</div>}
+        </div>
+      </div>
+
+      {/* Police History */}
+      <div>
+        <b>🚓 Police Clearance</b>
+        <div style={{ marginTop: "6px" }}>
+          {policeHistory.slice(-5).reverse().map((r, i) => (
+            <div key={i}>
+              {new Date(r.requestedAt).toLocaleTimeString()} — {r.zone} — {r.status}
+            </div>
+          ))}
+          {policeHistory.length === 0 && <div>No clearance requests yet</div>}
+        </div>
+      </div>
+
+      {/* Speed */}
+      <div>
+        <b>🚦 Speed Telemetry</b>
+        <div style={{ marginTop: "6px", fontSize: "16px" }}>
+          {speedKmph.toFixed(1)} km/h
+        </div>
+        <div style={{ fontSize: "11px", color: "#555" }}>
+          Updated every 5 seconds
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
 
 export default function App() {
   const [patientLoc, setPatientLoc] = useState(null);
@@ -308,16 +432,37 @@ export default function App() {
   const [zoneTimeline, setZoneTimeline] = useState([]);
   const [predictedZone, setPredictedZone] = useState(null);
   const [slaRemaining, setSlaRemaining] = useState(null);
-
+  const cardStyle = {
+  background: "#ffffff",
+  padding: "16px",
+  borderRadius: "12px",
+  boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+  border: "1px solid #f1f5f9",
+};
   // 🚓 Police Clearance Platform
   const POLICE_SLA_SEC = 8;
+  // Calculate distance to current destination
+  const distToPatient = movingPos && patientLoc ? haversineDist(movingPos, patientLoc) : 0;
+  const distToHospital = movingPos && selectedHospital ? haversineDist(movingPos, [selectedHospital.lat, selectedHospital.lng]) : 0;
 
-  const [policePlatform, setPolicePlatform] = useState({
-    activeRequest: null,   // current clearance request
-    history: []            // all past requests
-  });
+  // Determine current travel metrics
+  const currentDist = phase === "TO_PATIENT" ? distToPatient : (phase === "TO_HOSPITAL" ? distToHospital : 0);
+    const [policePlatform, setPolicePlatform] = useState({
+      activeRequest: null,   // current clearance request
+      history: []            // all past requests
+    });
+  // Calculate total remaining distance in km
+  const remainingDistance = movingPos && (phase === "TO_PATIENT" || phase === "TO_HOSPITAL")
+    ? (phase === "TO_PATIENT" 
+        ? haversineDist(movingPos, patientLoc) 
+        : haversineDist(movingPos, [selectedHospital.lat, selectedHospital.lng]))
+    : 0;
 
-  // ✅ ADD FUNCTIONS HERE 👇
+  // Calculate progress percentages
+  const totalTime = (selectedAmbulance?.prepTime || 0) + (initialEta || 0);
+  const prepProgress = totalTime > 0 ? (prepRemaining / totalTime) * 100 : 0;
+  const travelProgress = totalTime > 0 ? (eta / totalTime) * 100 : 0;
+    // ✅ ADD FUNCTIONS HERE 👇
 
   function approveClearance() {
     setPolicePlatform(prev => {
@@ -682,248 +827,249 @@ useEffect(() => {
 
 
 
-  const cardStyle = {
-    background: "white",
-    padding: "12px",
-    borderRadius: "8px",
-    marginBottom: "12px",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.1)"
-  };
 
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", height: "100vh" }}>
 
-      {/* SIDEBAR */}
-      <div style={{
-        padding: "18px",
-        borderRight: "1px solid #ddd",
+ // Paste this inside your App component return
+return (
+  <div style={{
+    height: "100vh",
+    display: "grid",
+    gridTemplateRows: "70px 1fr 40px",
+    backgroundColor: "#f8fafc",
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    color: "#1e293b",
+    overflow: "hidden"
+  }}>
+
+    {/* ================= HEADER ================= */}
+    <header style={{ 
+      zIndex: 100, 
+      background: "#ffffff", 
+      borderBottom: "1px solid #e2e8f0",
+      boxShadow: "0 1px 3px rgba(0,0,0,0.05)" 
+    }}>
+      <HeaderBar
+        phase={phase}
+        eta={eta}
+        speedKmph={speedKmph}
+        activePoliceZone={activePoliceZone}
+        loading={loading}
+      />
+    </header>
+
+    {/* ================= MAIN CONTENT ================= */}
+    <div style={{ display: "grid", gridTemplateColumns: "350px 1fr", overflow: "hidden" }}>
+
+      {/* LEFT SIDEBAR: METRICS & CONTROLS */}
+      <aside style={{
         background: "#ffffff",
-        height: "100vh",
-        overflowY: "auto"
+        borderRight: "1px solid #e2e8f0",
+        padding: "20px",
+        overflowY: "auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: "16px",
+        boxShadow: "2px 0 10px rgba(0,0,0,0.02)"
       }}>
-
-        <h2 style={{ marginBottom: "12px" }}>🚑 Smart Dispatch</h2>
-
-        <div style={cardStyle}>
-          <b>Patient Location</b>
-          <div style={{ fontSize: "13px", color: "#555" }}>
-            {patientLoc
-              ? `${patientLoc[0].toFixed(4)}, ${patientLoc[1].toFixed(4)}`
-              : "Click on map"}
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+          <span style={{ fontSize: "24px" }}>🚑</span>
+          <h2 style={{ fontSize: "18px", fontWeight: 800, margin: 0, letterSpacing: "-0.5px" }}>Smart Dispatch</h2>
         </div>
 
-        <div style={cardStyle}>
-          <b>Status</b>
-          <div style={{ fontSize: "13px", marginTop: "6px", lineHeight: "1.6" }}>
-            <div>{phase !== "IDLE" ? "✓" : "●"} Dispatched</div>
-            <div>{phase !== "IDLE" ? "✓" : "○"} Preparing</div>
-            <div>{phase === "TO_PATIENT" || phase === "TO_HOSPITAL" || phase === "DONE" ? "✓" : "○"} Enroute to Patient</div>
-            <div>{phase === "TO_HOSPITAL" || phase === "DONE" ? "✓" : "○"} Enroute to Hospital</div>
-            <div>{phase === "DONE" ? "✓" : "○"} Arrived</div>
-          </div>
-        </div>
-
-
-
-
-            {policeAlert && (
-              <div style={{
-              ...cardStyle,
-              background: "#e3f2fd",
-              border: "1px solid #2196f3"
-            }}>
-              <b>Police Coordination</b>
-              <div style={{ fontSize: "14px", marginTop: "6px" }}>
-                {policeAlert}
+        {/* 1. PRIMARY METRICS GRID */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+            <div style={cardStyle}>
+              <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>Live ETA</div>
+              <div style={{ fontSize: "22px", fontWeight: 700, color: "#2563eb" }}>
+                {eta ? `${eta.toFixed(1)}m` : "--"}
+              </div>
+              <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+                Dist: <b>{remainingDistance.toFixed(2)} km</b>
               </div>
             </div>
-          )}
-        {/* 🔮 Predicted Next Zone */}
-        {predictedZone && (
-          <div style={cardStyle}>
-            <b>Next Likely Jurisdiction</b>
-            <div style={{ fontSize: "14px", marginTop: "4px" }}>
-              {predictedZone.name}
+            <div style={cardStyle}>
+              <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600, textTransform: "uppercase" }}>Speed</div>
+              <div style={{ fontSize: "22px", fontWeight: 700, color: "#0f172a" }}>
+                {speedKmph.toFixed(0)} <span style={{ fontSize: "12px", color: "#94a3b8" }}>km/h</span>
+              </div>
             </div>
+          </div>
+
+  {/* 2. MISSION TIMELINE (Logistics Style) */}
+  <div style={{ ...cardStyle, background: "#0f172a", color: "#f8fafc" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+      <b style={{ fontSize: "11px", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.8px" }}>Live Mission Track</b>
+      <span style={{ fontSize: "10px", color: "#4ade80", fontWeight: "bold", background: "rgba(74, 222, 128, 0.1)", padding: "2px 8px", borderRadius: "4px" }}>
+        {phase}
+      </span>
+    </div>
+
+    <div style={{ display: "flex", flexDirection: "column", gap: "24px", position: "relative" }}>
+      
+      {/* Step 1: Preparation */}
+      <div style={{ display: "flex", gap: "16px", position: "relative", zIndex: 2 }}>
+        <div style={{ 
+          width: "24px", height: "24px", borderRadius: "50%", 
+          background: phase === "PREPARING" ? "#f59e0b" : "#4ade80",
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", border: "4px solid #0f172a"
+        }}>
+          {phase === "PREPARING" ? "⏳" : "✓"}
+        </div>
+        <div>
+          <div style={{ fontSize: "13px", fontWeight: 700 }}>Ambulance Prep</div>
+          <div style={{ fontSize: "11px", color: phase === "PREPARING" ? "#fbbf24" : "#94a3b8" }}>
+            {phase === "PREPARING" ? `Time left: ${prepRemaining}m` : "Ready for dispatch"}
+          </div>
+        </div>
+      </div>
+
+      {/* Step 2: To Patient */}
+      <div style={{ display: "flex", gap: "16px", position: "relative", zIndex: 2 }}>
+        <div style={{ 
+          width: "24px", height: "24px", borderRadius: "50%", 
+          background: phase === "TO_PATIENT" ? "#2563eb" : (phase === "TO_HOSPITAL" || phase === "DONE" ? "#4ade80" : "#334155"),
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", border: "4px solid #0f172a"
+        }}>
+          {phase === "TO_PATIENT" ? "🚑" : (phase === "TO_HOSPITAL" || phase === "DONE" ? "✓" : "•")}
+        </div>
+        <div>
+          <div style={{ fontSize: "13px", fontWeight: 700 }}>To Patient</div>
+          {phase === "TO_PATIENT" ? (
+            <div style={{ fontSize: "11px", color: "#60a5fa" }}>
+              <b>{currentDist.toFixed(2)} km</b> • ETA: <b>{eta?.toFixed(1)}m</b>
+            </div>
+          ) : (
+            <div style={{ fontSize: "11px", color: "#64748b" }}>
+              {phase === "PREPARING" ? "Waiting for prep..." : "Arrived at location"}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Step 3: To Hospital */}
+      <div style={{ display: "flex", gap: "16px", position: "relative", zIndex: 2 }}>
+        <div style={{ 
+          width: "24px", height: "24px", borderRadius: "50%", 
+          background: phase === "TO_HOSPITAL" ? "#8b5cf6" : (phase === "DONE" ? "#4ade80" : "#334155"),
+          display: "flex", alignItems: "center", justifyContent: "center", fontSize: "12px", border: "4px solid #0f172a"
+        }}>
+          {phase === "TO_HOSPITAL" ? "🏥" : (phase === "DONE" ? "✓" : "•")}
+        </div>
+        <div>
+          <div style={{ fontSize: "13px", fontWeight: 700 }}>To Hospital</div>
+          {phase === "TO_HOSPITAL" ? (
+            <div style={{ fontSize: "11px", color: "#a78bfa" }}>
+              <b>{currentDist.toFixed(2)} km</b> • ETA: <b>{eta?.toFixed(1)}m</b>
+            </div>
+          ) : (
+            <div style={{ fontSize: "11px", color: "#64748b" }}>
+              {phase === "DONE" ? "Mission completed" : "Pending patient pickup"}
+            </div>
+          )}
+        </div>
+      </div>
+
+    {/* Vertical Path Line */}
+    <div style={{ 
+      position: "absolute", left: "11px", top: "10px", bottom: "10px", 
+      width: "2px", background: "#1e293b", zIndex: 1 
+    }} />
+  </div>
+</div>
+
+        {/* 3. POLICE COORDINATION (Conditional) */}
+        {policeAlert && (
+          <div style={{ ...cardStyle, background: "#fff1f2", border: "1px solid #fecaca", color: "#991b1b" }}>
+            <b style={{ fontSize: "12px" }}>⚠️ ALERT: POLICE JURISDICTION</b>
+            <div style={{ fontSize: "13px", marginTop: "4px" }}>{policeAlert}</div>
           </div>
         )}
 
-          {/* 🕒 Zone Transition Timeline */}
-          {zoneTimeline.length > 0 && (
-            <div style={cardStyle}>
-              <b>Zone Timeline</b>
-              <div style={{ fontSize: "12px", marginTop: "6px" }}>
-                {zoneTimeline.slice(-5).map((entry, idx) => (
-                  <div key={idx}>
-                    {entry.time} — {entry.zone}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-      
-                  {/* 🚓 Police Clearance Platform */}
-        
-
-        {/* 📜 Police Clearance History */}
+        {/* 4. CLEARANCE HISTORY */}
         {policePlatform.history.length > 0 && (
           <div style={cardStyle}>
-            <b>Clearance History</b>
-            <div style={{ fontSize: "12px", marginTop: "6px" }}>
-              {policePlatform.history.slice(-5).map(r => (
-                <div key={r.id}>
-                  {new Date(r.requestedAt).toLocaleTimeString()} — {r.zone} — {r.status}
+            <b style={{ fontSize: "11px", color: "#64748b", textTransform: "uppercase" }}>Clearance Log</b>
+            <div style={{ fontSize: "11px", marginTop: "8px" }}>
+              {policePlatform.history.slice(-3).reverse().map(r => (
+                <div key={r.id} style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f1f5f9", padding: "6px 0" }}>
+                  <span>{r.zone}</span>
+                  <span style={{ color: r.status === "APPROVED" ? "#16a34a" : "#dc2626", fontWeight: 600 }}>{r.status}</span>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* 🚓 Police Control Panel */}
-          {policePlatform.activeRequest?.status === "PENDING" && (
-            <div style={{ ...cardStyle, border: "2px dashed #1976d2" }}>
-              <b>Police Control Panel</b>
-
-              <div style={{ marginTop: "8px", fontSize: "13px" }}>
-                Pending clearance for <b>{policePlatform.activeRequest.zone}</b>
-              </div>
-
-              <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
-                <button
-                  onClick={approveClearance}
-                  style={{
-                    flex: 1,
-                    padding: "6px",
-                    background: "#4caf50",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer"
-                  }}
-                >
-                  ✅ Approve
-                </button>
-
-                <button
-                  onClick={rejectClearance}
-                  style={{
-                    flex: 1,
-                    padding: "6px",
-                    background: "#f44336",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "4px",
-                    cursor: "pointer"
-                  }}
-                >
-                  ❌ Reject
-                </button>
-              </div>
-            </div>
-          )}
-
-
-
-        {phase === "PREPARING" && (
-          <div style={cardStyle}>
-            <b>Preparing Ambulance</b>
-            <div style={{ fontSize: "18px" }}>
-              {prepRemaining} min remaining
-            </div>
+        {/* 5. ASSET DETAILS */}
+        <div style={{ marginTop: "auto" }}>
+          <div style={{ padding: "12px", background: "#f1f5f9", borderRadius: "8px", fontSize: "12px" }}>
+            <div style={{ marginBottom: "4px" }}><b>Vehicle:</b> {selectedAmbulance?.id || "N/A"}</div>
+            <div><b>Hospital:</b> {selectedHospital?.name || "Assigning..."}</div>
           </div>
-        )}
+        </div>
 
-        {eta !== null && (
-          <div style={cardStyle}>
-            <b>ETA</b>
-            {(phase === "TO_PATIENT" || phase === "TO_HOSPITAL") && (
-              <div style={cardStyle}>
-                <b>Current Speed</b>
-                <div style={{ fontSize: "18px" }}>
-                  {speedKmph.toFixed(1)} km/h
-                </div>
-              </div>
-            )}
-
-            <div style={{ fontSize: "22px", marginTop: "4px" }}>
-              {eta.toFixed(1)} min
-            </div>
-
-            {initialEta && (
-              <ProgressBar
-                value={Math.min(100, ((initialEta - eta) / initialEta) * 100)}
-              />
-            )}
-          </div>
-        )}
-
-        {selectedAmbulance && (
-          <div style={cardStyle}>
-            <b>Ambulance</b>
-            <div>ID: {selectedAmbulance.id}</div>
-          </div>
-        )}
-
-        {selectedHospital && (
-          <div style={cardStyle}>
-            <b>Hospital</b>
-            <div>{selectedHospital.name}</div>
-          </div>
-        )}
-
-
-        {loading && <p>⏳ Computing dispatch...</p>}
-        {error && <p style={{ color: "red" }}>{error}</p>}
-        {/* 🗺️ Zone Legend */}
-        <div style={cardStyle}>
-          <b>Police Zones</b>
-          <div style={{ marginTop: "8px" }}>
+        {/* 6. LEGEND */}
+        <div style={{ padding: "10px 0" }}>
+          <b style={{ fontSize: "10px", color: "#94a3b8", textTransform: "uppercase" }}>Jurisdiction Legend</b>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
             {policeZones.map(zone => (
-              <div
-                key={zone.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  marginBottom: "6px",
-                  fontSize: "13px"
-                }}
-              >
-                <div
-                  style={{
-                    width: "14px",
-                    height: "14px",
-                    background: zone.color,
-                    marginRight: "8px",
-                    borderRadius: "3px"
-                  }}
-                />
+              <div key={zone.id} style={{ display: "flex", alignItems: "center", fontSize: "10px", color: "#64748b" }}>
+                <div style={{ width: "8px", height: "8px", background: zone.color, marginRight: "4px", borderRadius: "2px" }} />
                 {zone.name}
               </div>
             ))}
           </div>
-        </div> 
-      </div>
+        </div>
+      </aside>
 
-      {/* MAP */}
-      <MapView
-        patientLoc={patientLoc}
-        setPatientLoc={setPatientLoc}
-        selectedAmbulance={selectedAmbulance}
-        selectedHospital={selectedHospital}
-        movingPos={movingPos}
-        route={route}
-        policeZones={policeZones}
-      />
-      <PolicePopup
-        request={policePlatform.activeRequest}
-        onApprove={approveClearance}
-        onReject={rejectClearance}
-        slaRemaining={slaRemaining}
-      />
+      {/* RIGHT SIDE: MAP VIEW */}
+      <section style={{ position: "relative", overflow: "hidden", background: "#cbd5e1" }}>
+        <MapView
+          patientLoc={patientLoc}
+          setPatientLoc={setPatientLoc}
+          selectedAmbulance={selectedAmbulance}
+          selectedHospital={selectedHospital}
+          movingPos={movingPos}
+          route={route}
+          policeZones={policeZones}
+        />
+        
+        {/* FLOATING POLICE ACTION POPUP */}
+        <div style={{ position: "absolute", top: "20px", right: "20px", zIndex: 1000 }}>
+          <PolicePopup
+            request={policePlatform.activeRequest}
+            onApprove={approveClearance}
+            onReject={rejectClearance}
+            slaRemaining={slaRemaining}
+          />
+        </div>
 
-
-
+        {loading && (
+          <div style={{ position: "absolute", bottom: "20px", left: "20px", background: "white", padding: "8px 16px", borderRadius: "20px", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", display: "flex", alignItems: "center", gap: "8px", fontSize: "13px" }}>
+            <span className="animate-spin">⏳</span> Computing optimal route...
+          </div>
+        )}
+      </section>
     </div>
-  );
+
+    {/* ================= FOOTER ================= */}
+    <footer style={{
+      background: "#0f172a",
+      color: "#64748b",
+      fontSize: "11px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "0 24px",
+      borderTop: "1px solid #1e293b"
+    }}>
+      <div style={{ display: "flex", gap: "20px" }}>
+        <span>STATUS: <span style={{ color: "#4ade80" }}>ONLINE</span></span>
+        <span>LATENCY: 22ms</span>
+      </div>
+      <div style={{ letterSpacing: "1px", fontWeight: 600 }}>SMART EMERGENCY RESPONSE SYSTEM • LIVE SIMULATION</div>
+      <div>{new Date().toLocaleDateString()}</div>
+    </footer>
+  </div>
+);
 }
