@@ -170,6 +170,17 @@ function zoneCentroid(polygon) {
   return [lat / polygon.length, lng / polygon.length];
 }
 
+function createClearanceRequest(zoneName) {
+  return {
+    id: crypto.randomUUID(),
+    zone: zoneName,
+    status: "PENDING",      // PENDING | ACKED | TIMEOUT
+    requestedAt: Date.now(),
+    ackAt: null,
+    responseSec: null
+  };
+}
+
 
 export default function App() {
   const [patientLoc, setPatientLoc] = useState(null);
@@ -189,6 +200,49 @@ export default function App() {
   const [policeAlert, setPoliceAlert] = useState(null);
   const [zoneTimeline, setZoneTimeline] = useState([]);
   const [predictedZone, setPredictedZone] = useState(null);
+  
+  // 🚓 Police Clearance Platform
+  const POLICE_SLA_SEC = 8;
+
+  const [policePlatform, setPolicePlatform] = useState({
+    activeRequest: null,   // current clearance request
+    history: []            // all past requests
+  });
+
+
+  // 🚓 Police ACK Simulation Engine
+useEffect(() => {
+  const req = policePlatform.activeRequest;
+  if (!req || req.status !== "PENDING") return;
+
+  const delayMs = 2000 + Math.random() * 8000;
+
+  const timer = setTimeout(() => {
+    const now = Date.now();
+    const responseSec = (now - req.requestedAt) / 1000;
+
+    const finalStatus =
+      responseSec > POLICE_SLA_SEC ? "TIMEOUT" : "ACKED";
+
+    setPolicePlatform(prev => ({
+      activeRequest: {
+        ...req,
+        status: finalStatus,
+        ackAt: now,
+        responseSec
+      },
+      history: prev.history.map(r =>
+        r.id === req.id
+          ? { ...r, status: finalStatus, ackAt: now, responseSec }
+          : r
+      )
+    }));
+  }, delayMs);
+
+  return () => clearTimeout(timer);
+}, [policePlatform.activeRequest]);
+
+
 
 
   // 📡 Fetch dispatch from backend
@@ -352,6 +406,16 @@ export default function App() {
     console.log("🚨 Entered police jurisdiction:", detectedZone.name);
 
    setActivePoliceZone(detectedZone);
+   // 🚓 Send clearance request
+// 🚓 Create new clearance request
+  const request = createClearanceRequest(detectedZone.name);
+
+  setPolicePlatform(prev => ({
+    activeRequest: request,
+    history: [...prev.history, request]
+  }));
+
+
    setPoliceAlert(`🚓 Entered ${detectedZone.name}. Police notified for clearance.`);
 
 setZoneTimeline(prev => [
@@ -429,6 +493,8 @@ useEffect(() => {
 
     return () => clearInterval(refreshTimer);
   }, [phase, movingPos, selectedHospital, patientLoc]);
+
+
 
 
   const cardStyle = {
@@ -512,6 +578,50 @@ useEffect(() => {
             </div>
           )}
       
+                  {/* 🚓 Police Clearance Platform */}
+        {policePlatform.activeRequest && (
+          <div style={cardStyle}>
+            <b>Police Clearance</b>
+
+            <div style={{ fontSize: "13px", marginTop: "6px" }}>
+              <div><b>Zone:</b> {policePlatform.activeRequest.zone}</div>
+              <div><b>Status:</b> {policePlatform.activeRequest.status}</div>
+
+              {policePlatform.activeRequest.responseSec && (
+                <div>
+                  <b>Response:</b>{" "}
+                  {policePlatform.activeRequest.responseSec.toFixed(1)} sec
+                </div>
+              )}
+
+              {policePlatform.activeRequest.status === "PENDING" && (
+                <div>⏳ Awaiting police clearance...</div>
+              )}
+
+              {policePlatform.activeRequest.status === "ACKED" && (
+                <div>✅ Clearance granted</div>
+              )}
+
+              {policePlatform.activeRequest.status === "TIMEOUT" && (
+                <div>⚠ SLA breached</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 📜 Police Clearance History */}
+        {policePlatform.history.length > 0 && (
+          <div style={cardStyle}>
+            <b>Clearance History</b>
+            <div style={{ fontSize: "12px", marginTop: "6px" }}>
+              {policePlatform.history.slice(-5).map(r => (
+                <div key={r.id}>
+                  {new Date(r.requestedAt).toLocaleTimeString()} — {r.zone} — {r.status}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
 
         {phase === "PREPARING" && (
@@ -560,6 +670,7 @@ useEffect(() => {
             <div>{selectedHospital.name}</div>
           </div>
         )}
+
 
         {loading && <p>⏳ Computing dispatch...</p>}
         {error && <p style={{ color: "red" }}>{error}</p>}
