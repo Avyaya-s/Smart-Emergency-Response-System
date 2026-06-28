@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import MapView from "./MapView";
 
-const API_BASE = "https://31052e71af07.ngrok-free.app";
+const API_BASE = "https://dtl-backend.onrender.com";
 const policeZones = [
   {
     id: "PS1",
