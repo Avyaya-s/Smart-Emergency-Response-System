@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
 import MapView from "./MapView";
 
-const API_BASE = "http://127.0.0.1:5000";
-
-// 🚓 Dummy Police Jurisdictions (polygons)
-// 🚓 Dummy Police Jurisdictions (fictional shapes)
-// 🚓 Dummy Police Jurisdictions (fictional but realistic)
+const API_BASE = "https://31052e71af07.ngrok-free.app";
 const policeZones = [
   {
     id: "PS1",
